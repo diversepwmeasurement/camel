@@ -1,81 +1,64 @@
-#
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-
-name: PR Build (Camel 4)
-
-on:
-  pull_request:
-    branches:
-      - main
-      - camel-4.4.x
-    paths-ignore:
-      - .github/**
-      - README.md
-      - SECURITY.md
-      - Jenkinsfile
-      - Jenkinsfile.*
-      - NOTICE.txt
-
 jobs:
   build:
+    continue-on-error: ${{ matrix.experimental }}
     if: github.repository == 'apache/camel'
     permissions:
       issues: write
-    runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.experimental }}
+    runs-on: self-hosted
+    steps:
+    - continue-on-error: true
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - continue-on-error: true
+      id: install-packages
+      uses: ./.github/actions/install-packages
+    - continue-on-error: true
+      id: install-mvnd
+      uses: ./.github/actions/install-mvnd
+    - continue-on-error: true
+      name: Set up JDK ${{ matrix.java }}
+      uses: actions/setup-java@v4
+      with:
+        cache: maven
+        distribution: temurin
+        java-version: ${{ matrix.java }}
+    - continue-on-error: true
+      name: maven build
+      run: ./etc/scripts/regen.sh
+    - continue-on-error: true
+      if: always()
+      name: archive logs
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-${{ matrix.java }}.log
+        path: build.log
+    - continue-on-error: true
+      name: Fail if there are uncommitted changes
+      run: '[[ -z $(git status --porcelain) ]] || { echo ''There are uncommitted changes'';
+        git status; echo; echo; git diff; exit 1; }
+
+        '
+      shell: bash
+    - continue-on-error: true
+      name: mvn test
+      uses: ./.github/actions/incremental-build
+      with:
+        artifact-upload-suffix: java-${{ matrix.java }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        mode: test
+        pr-id: ${{ github.event.number }}
+        skip-mvnd-install: 'true'
     strategy:
       matrix:
-        java: ['17']
-        experimental: [ false ]
+        experimental:
+        - false
         include:
-          - java: '21'
-            experimental: true
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - id: install-packages
-        uses: ./.github/actions/install-packages
-      - id: install-mvnd
-        uses: ./.github/actions/install-mvnd
-      - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: ${{ matrix.java }}
-          cache: 'maven'
-      - name: maven build
-        run: ./etc/scripts/regen.sh
-      - name: archive logs
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: build-${{ matrix.java }}.log
-          path: build.log
-      - name: Fail if there are uncommitted changes
-        shell: bash
-        run: |
-          [[ -z $(git status --porcelain) ]] || { echo 'There are uncommitted changes'; git status; echo; echo; git diff; exit 1; }
-      - name: mvn test
-        uses: ./.github/actions/incremental-build
-        with:
-          mode: test
-          pr-id: ${{ github.event.number }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          skip-mvnd-install: 'true'
-          artifact-upload-suffix: java-${{ matrix.java }}
+        - experimental: true
+          java: '21'
+        java:
+        - '17'
+name: PR Build (Camel 4)
+on:
+  repository_dispatch:
+    types: trigger-ga___pr-build-main.yml
